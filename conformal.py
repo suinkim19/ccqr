@@ -211,20 +211,24 @@ class CCQRpredictor(BaseEstimator, RegressorMixin):
         self,
         model,
         quantiles=[0.05, 0.95],
-        bandwidth=0.05,
+        d=0.2,
         alpha=None,
         K=5,
         symmetric=True,
-        strategy="score",
+        average="score",
         adaptive=False,
     ):
         """
-        Initializes the Split Composite Conformal Regressor (SCCRegressor).
+        Initializes the Split Conformalized Composite Quantile Regression.
 
         Parameters:
         - model: A scikit-learn compatible regression model.
         - quantiles: A list containing two quantiles for prediction intervals (default is [0.05, 0.95]).
-        - strategy: The strategy to select the coverage quantile ('average', 'widest', 'narrowest', 'asymmetric', 'score', 'quantile').
+        - d: The range of combining quantiles (default is 0.2).
+        - alpha: The desired coverage rate (default is 1 - (quantiles[1] - quantiles[0])).
+        - K: The number of combining quantiles (default is 9).
+        - symmetric: Whether to use symmetric conformity fucntions (default is True).
+        - average: The type of averaging strategy (default is score).
         - adaptive: Whether to use adaptive conformity functions (default is False).
         """
         self.model = model
@@ -232,18 +236,16 @@ class CCQRpredictor(BaseEstimator, RegressorMixin):
         self.alpha = (
             1 - (quantiles[1] - quantiles[0]) if alpha == None else alpha
         )  # Calculate alpha based on quantiles
-        self.bandwidth = bandwidth
+        self.d = d
         self.K = K
         self.coverage_quantiles = []
-        self.strategy = strategy
+        self.average = average
         self.symmetric = symmetric
         self.adaptive = adaptive
         self.grid_q = self._generate_quantile_grid()
 
     def fit(self, X, y):
         """
-        Fits the base model on the training data.
-
         Parameters:
         - X: Training features.
         - y: Training labels.
@@ -253,14 +255,11 @@ class CCQRpredictor(BaseEstimator, RegressorMixin):
 
     def calibrate(self, X_calib, y_calib):
         """
-        Calibrates the model using a separate calibration set to compute conformity scores.
-        Computes coverage quantiles for all pairs in grid_q.
-
         Parameters:
         - X_calib: Calibration features.
         - y_calib: Calibration labels.
         """
-        # Calculate coverage quantiles for all grid pairs
+  
         if self.symmetric:
             calibration_scores = self._calculate_symmetric_scores(X_calib, y_calib)
             self._compute_symmetric_quantiles(calibration_scores, y_calib)
@@ -278,12 +277,12 @@ class CCQRpredictor(BaseEstimator, RegressorMixin):
         """
         grid_q_low = np.linspace(
             self.quantiles[0],
-            self.quantiles[0] + self.bandwidth,
+            self.quantiles[0] + self.d,
             self.K,
         ).reshape(-1, 1)
         grid_q_high = np.linspace(
             self.quantiles[1],
-            self.quantiles[1] - self.bandwidth,
+            self.quantiles[1] - self.d,
             self.K,
         ).reshape(-1, 1)
         return np.concatenate((grid_q_low, grid_q_high), axis=1)
@@ -333,9 +332,9 @@ class CCQRpredictor(BaseEstimator, RegressorMixin):
 
     def _compute_asymmetric_quantiles(self, lower_scores, upper_scores, y_calib):
         """
-        Computes asymmetric coverage quantiles based on the strategy.
+        Computes asymmetric coverage quantiles based on the average.
         """
-        if self.strategy == "quantile":
+        if self.average == "quantile":
             for q, lower_score, upper_score in zip(
                 self.grid_q, lower_scores, upper_scores
             ):
@@ -349,7 +348,7 @@ class CCQRpredictor(BaseEstimator, RegressorMixin):
                     [lower_coverage_quantile, upper_coverage_quantile]
                 )
                 self.coverage_quantiles.append((q, coverage_quantile))
-        elif self.strategy == "score":
+        elif self.average == "score":
             lower_coverage_quantile = np.quantile(
                 np.mean(np.array(lower_scores), axis=0),
                 (1 - self.alpha / 2) * (1 + 1 / len(y_calib)),
@@ -366,15 +365,15 @@ class CCQRpredictor(BaseEstimator, RegressorMixin):
 
     def _compute_symmetric_quantiles(self, calibration_scores, y_calib):
         """
-        Computes symmetric coverage quantiles based on the strategy.
+        Computes symmetric coverage quantiles based on the average.
         """
-        if self.strategy == "quantile":
+        if self.average == "quantile":
             for q, score in zip(self.grid_q, calibration_scores):
                 coverage_quantile = np.quantile(
                     score, (1 - self.alpha) * (1 + 1 / len(y_calib))
                 )
                 self.coverage_quantiles.append((q, coverage_quantile))
-        elif self.strategy == "score":
+        elif self.average == "score":
             coverage_quantile = np.quantile(
                 np.mean(np.array(calibration_scores), axis=0),
                 (1 - self.alpha) * (1 + 1 / len(y_calib)),
@@ -384,13 +383,8 @@ class CCQRpredictor(BaseEstimator, RegressorMixin):
 
     def predict(self, X):
         """
-        Predicts the conformal prediction intervals for new data.
-
         Parameters:
         - X: New input features.
-
-        Returns:
-        - A tuple (lower_bound, upper_bound) representing the prediction intervals.
         """
 
         def get_bounds(y_pred_quantiles, y_pred_target, coverage_quantile):
@@ -426,19 +420,19 @@ class CCQRpredictor(BaseEstimator, RegressorMixin):
         return np.column_stack((cqr_lower_bound, cqr_upper_bound))
 
 
-# Distributional conformalized prediction
+
 class DCPpredictor(BaseEstimator, RegressorMixin):
 
     def __init__(
         self, model, quantiles=[0.05, 0.95], grid_q=np.arange(0.01, 1, 0.01).tolist()
     ):
         """
-        Initializes the Split Conformal Regressor (SCRegressor).
+        Initializes Distributional Conformal Prediction
 
         Parameters:
         - model: A quantile regression model.
-        - conformity_score_func: A function to compute conformity scores.
         - quantiles: A list containing two quantiles for prediction intervals (default is [0.05, 0.95]).
+        - grid_q: A list containing quantiles used in DCP (default is [0.01, 0.02, ..., 0.99]).
         """
         self.model = model
         self.quantiles = quantiles
@@ -449,9 +443,6 @@ class DCPpredictor(BaseEstimator, RegressorMixin):
 
     def calibrate(self, X_calib, y_calib):
         """
-        Calibrates the model using a separate calibration set to compute conformity scores.
-        If CV is enabled, it performs cross-validation to find the optimal quantiles.
-
         Parameters:
         - X_calib: Calibration features.
         - y_calib: Calibration labels.
@@ -470,16 +461,10 @@ class DCPpredictor(BaseEstimator, RegressorMixin):
 
     def predict(self, X):
         """
-        Predicts the conformal prediction intervals for new data.
-
         Parameters:
         - X: New input features.
-
-        Returns:
-        - A tuple (lower_bound, upper_bound) representing the prediction intervals.
         """
-        # Use the optimal quantiles if CV was performed, else use the initial quantiles
-        # Predict lower and upper quantiles using the base model
+      
         Q_yx = self.model.predict(X, quantiles=self.grid_q)
 
         ci_grid = np.abs(np.array(self.grid_q) - 0.5)
