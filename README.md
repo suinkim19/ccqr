@@ -18,7 +18,7 @@
     ```
     Or directly from GitHub:
     ```bash
-    pip install git+https://github.com/yourusername/ccqr.git
+    pip install git+https://github.com/suinkim19/ccqr.git
     ```
     
 ## Basic Usage
