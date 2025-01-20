@@ -44,7 +44,10 @@ class CCQRpredictor(BaseEstimator, RegressorMixin):
         self.coverage_quantiles = []
 
         # Generate the grid once
-        self.grid_q = generate_quantile_grid(self.quantiles, self.d, self.K)
+        if self.symmetric:
+            self.grid_q = generate_quantile_grid(self.quantiles, self.d, self.K)
+        else:
+            self.grid_q = generate_asymmetric_quantile_grid(self.quantiles, self.d[0], self.d[1], self.K)
 
     def fit(self, X, y):
         """Fit the model."""
