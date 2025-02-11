@@ -7,6 +7,7 @@ import torch
 from tqdm.autonotebook import tqdm
 
 # Conformal predicion with mean regressor
+
 class CPpredictor(BaseEstimator, RegressorMixin):
     def __init__(self, model, quantiles=[0.05, 0.95]):
         """
